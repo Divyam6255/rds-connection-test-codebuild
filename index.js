@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+=======
+// testConnectivity.js
+
+>>>>>>> 8271c6966fa7a15ddc6322c38dfa724e1c87be85
 const dns = require('dns').promises;
 const mysql = require('mysql2/promise');
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
@@ -62,4 +67,8 @@ async function testConnectivity() {
 }
 
 // Run the connectivity test if this file is executed directly.
+<<<<<<< HEAD
 testConnectivity();
+=======
+testConnectivity();
+>>>>>>> 8271c6966fa7a15ddc6322c38dfa724e1c87be85
