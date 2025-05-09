@@ -1,0 +1,17 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - echo "Installing npm dependencies..."
+      - npm install
+  build:
+    commands:
+      - echo "Running connectivity test..."
+      # Run the testConnectivity script. This command will exit with 1 if the test fails.
+      - node testConnectivity.js
+artifacts:
+  files:
+    - '**/*'
