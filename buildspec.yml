@@ -5,13 +5,63 @@ phases:
     runtime-versions:
       nodejs: 18
     commands:
-      - echo "Installing npm dependencies..."
-      - npm install
+      - echo "Installing required Node.js modules..."
+      # Install only the necessary modules for connectivity test.
+      - npm install mysql2 @aws-sdk/client-secrets-manager
+  pre_build:
+    commands:
+      - echo "Creating the connectivity test script..."
+      # Write the connectivity test code into connectivity.js using a heredoc.
+      - |
+        cat << 'EOF' > connectivity.js
+        const mysql = require('mysql2/promise');
+        const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+
+        // Use environment variables or defaults for region and secret
+        const REGION = process.env.REGION || 'us-west-1';
+        const SECRET_NAME = process.env.SECRET_NAME || 'rds-db-credentials';
+
+        // Fetch database credentials from Secrets Manager
+        async function getSecret() {
+          const client = new SecretsManagerClient({ region: REGION });
+          const command = new GetSecretValueCommand({ SecretId: SECRET_NAME });
+          const response = await client.send(command);
+          return JSON.parse(response.SecretString);
+        }
+
+        // Establish a database connection
+        async function getConnection() {
+          const creds = await getSecret();
+          return mysql.createConnection({
+            host: creds.host,
+            user: creds.username,
+            password: creds.password,
+            database: creds.dbname,
+            port: creds.port || 3306
+          });
+        }
+
+        // Run a simple query to test connectivity
+        async function runQuery() {
+          try {
+            const connection = await getConnection();
+            const [rows] = await connection.query('SELECT NOW() AS now');
+            await connection.end();
+            console.log("Connectivity test successful. Database time:", rows[0].now);
+            process.exit(0);
+          } catch (err) {
+            console.error("Connectivity test failed.", err.message);
+            process.exit(1);
+          }
+        }
+
+        runQuery();
+        EOF
   build:
     commands:
-      - echo "Running connectivity test..."
-      # Run the testConnectivity script. This command will exit with 1 if the test fails.
-      - node index.js
+      - echo "Running the connectivity test..."
+      # Execute the connectivity test script; build will fail if it exits with a non-zero status.
+      - node connectivity.js
 artifacts:
   files:
     - '**/*'
