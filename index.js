@@ -1,42 +1,52 @@
-const mysql = require('mysql2/promise');
+const express = require('express');
 const dns = require('dns').promises;
+const mysql = require('mysql2/promise');
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 
-(async () => {
+const app = express();
+
+// Use environment variables or defaults
+const REGION = process.env.REGION || 'us-west-1';
+const SECRET_NAME = process.env.SECRET_NAME || 'rds-db-credentials';
+
+// Fetch database credentials from Secrets Manager
+async function getSecret() {
+  const client = new SecretsManagerClient({ region: REGION });
+  const command = new GetSecretValueCommand({ SecretId: SECRET_NAME });
+  const response = await client.send(command);
+  return JSON.parse(response.SecretString);
+}
+
+// Establish a database connection
+async function getConnection() {
+  const creds = await getSecret();
+  return mysql.createConnection({
+    host: creds.host,
+    user: creds.username,
+    password: creds.password,
+    database: creds.dbname,
+    port: creds.port || 3306,
+  });
+}
+
+// Express route: Connect to RDS, perform DNS lookup, and show statuses accordingly
+app.get('/', async (req, res) => {
+  let dbTime;
+  let googleIP;
   try {
-    // Set environment variables (or pass them from CodeBuild environment)
-    const REGION = process.env.REGION || 'us-west-1';
-    const SECRET_NAME = process.env.SECRET_NAME || 'rds-db-credentials';
+    // Attempt to connect to RDS and fetch the current time
+    const conn = await getConnection();
+    const [rows] = await conn.query('SELECT NOW() AS now');
+    dbTime = rows[0].now;
+    await conn.end();
+    
+    // If RDS connection succeeded, perform DNS lookup
+    try {
+      const dnsResult = await dns.lookup('google.com');
+      googleIP = dnsResult.address;
+    } catch (dnsErr) {
+      // In case DNS lookup fails, mark internet as inaccessible
+      googleIP = "Not connected to Internet";
+    }
+    
 
-    // Fetch RDS credentials from Secrets Manager
-    const client = new SecretsManagerClient({ region: REGION });
-    const command = new GetSecretValueCommand({ SecretId: SECRET_NAME });
-    const response = await client.send(command);
-    const creds = JSON.parse(response.SecretString);
-
-    // Connect to RDS and execute a simple query
-    const connection = await mysql.createConnection({
-      host: creds.host,
-      user: creds.username,
-      password: creds.password,
-      database: creds.dbname,
-      port: creds.port || 3306
-    });
-    const [rows] = await connection.query('SELECT NOW() AS now');
-    await connection.end();
-
-    // Attempt a DNS lookup to check Internet connectivity
-    const dnsResult = await dns.lookup('google.com');
-
-    // Optionally, log output (or comment these out to reduce output)
-    console.log('Database connected. Now:', rows[0].now);
-    console.log('Internet check succeeded. Google IP:', dnsResult.address);
-
-    // Exit with success
-    process.exit(0);
-  } catch (err) {
-    console.error('Connectivity test failed:', err.message);
-    // Ensure the build fails by exiting with a non-zero code.
-    process.exit(1);
-  }
-})();
