@@ -1,9 +1,8 @@
-const express = require('express');
+// testConnectivity.js
+
 const dns = require('dns').promises;
 const mysql = require('mysql2/promise');
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
-
-const app = express();
 
 // Use environment variables or defaults
 const REGION = process.env.REGION || 'us-west-1';
@@ -17,7 +16,7 @@ async function getSecret() {
   return JSON.parse(response.SecretString);
 }
 
-// Establish a database connection
+// Establish a database connection using mysql2
 async function getConnection() {
   const creds = await getSecret();
   return mysql.createConnection({
@@ -29,24 +28,40 @@ async function getConnection() {
   });
 }
 
-// Express route: Connect to RDS, perform DNS lookup, and show statuses accordingly
-app.get('/', async (req, res) => {
-  let dbTime;
-  let googleIP;
+// Main function to run connectivity tests
+async function testConnectivity() {
   try {
-    // Attempt to connect to RDS and fetch the current time
+    // Test RDS connectivity by executing a simple query.
     const conn = await getConnection();
     const [rows] = await conn.query('SELECT NOW() AS now');
-    dbTime = rows[0].now;
+    const dbTime = rows[0].now;
     await conn.end();
-    
-    // If RDS connection succeeded, perform DNS lookup
+
+    // If RDS connection succeeded, check Internet connectivity using DNS lookup.
+    let internetStatus = "Connected";
+    let googleIP = "";
     try {
       const dnsResult = await dns.lookup('google.com');
       googleIP = dnsResult.address;
     } catch (dnsErr) {
-      // In case DNS lookup fails, mark internet as inaccessible
+      internetStatus = "Not connected";
       googleIP = "Not connected to Internet";
     }
-    
 
+    console.log('Connectivity Test Succeeded:');
+    console.log('--------------------------------');
+    console.log('Database Time:', dbTime);
+    console.log('Internet Status:', internetStatus);
+    console.log('Google IP:', googleIP);
+    process.exit(0);
+  } catch (err) {
+    console.error('Connectivity Test Failed!');
+    console.error('--------------------------------');
+    console.error('Unable to connect to RDS and/or Internet');
+    console.error('Error:', err.message);
+    process.exit(1);
+  }
+}
+
+// Run the connectivity test if this file is executed directly.
+testConnectivity();
